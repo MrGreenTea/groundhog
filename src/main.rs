@@ -23,6 +23,10 @@ struct Args {
     /// Only count succesfull runs
     #[arg(long, default_value_t = false)]
     only_count_successes: bool,
+
+    /// Shell to use
+    #[arg(long, default_value_t = String::from("sh"))]
+    shell: String,
 }
 
 fn main() {
@@ -34,7 +38,7 @@ fn main() {
         println!("--------------");
         // run command and only show output if it fails
         let command = args.command.replace("{}", i.to_string().as_str());
-        let r = std::process::Command::new("sh")
+        let r = std::process::Command::new(&args.shell)
             .arg("-c")
             .arg(command)
             .output();
