@@ -1,3 +1,6 @@
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+
 use clap::Parser;
 
 /// Simple program that repeats a command
@@ -34,28 +37,57 @@ fn main() {
 
     let mut i = 1;
     while i <= args.times {
-        println!("Run {}", i);
+        println!("\nRun {i}");
         println!("--------------");
         // run command and only show output if it fails
         let command = args.command.replace("{}", i.to_string().as_str());
-        let r = std::process::Command::new(&args.shell)
+        let command_run = Command::new(&args.shell)
             .arg("-c")
             .arg(command)
-            .output();
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
 
-        if !args.only_count_successes || r.is_ok() {
-            i += 1;
-        }
+        match command_run {
+            Ok(mut cmd) => {
+                let stdout_lines = {
+                    let stdout = cmd.stdout.as_mut().expect("Failed to open stdout");
+                    let stdout_reader = BufReader::new(stdout);
+                    stdout_reader.lines()
+                };
+                let stderr_lines = {
+                    let stderr = cmd.stderr.as_mut().expect("Failed to open stderr");
+                    let stderr_reader = BufReader::new(stderr);
+                    stderr_reader.lines()
+                };
 
-        if let Ok(r) = r {
-            if !r.status.success() || args.show_output {
-                println!("{}", String::from_utf8(r.stdout).unwrap());
+                for line in stdout_lines {
+                    println!("{}", line.unwrap());
+                }
+
+                for line in stderr_lines {
+                    eprintln!("{}", line.unwrap());
+                }
+
+                match cmd.wait() {
+                    Ok(status) => {
+                        if !status.success() && !args.ignore_failures {
+                            // exit with error if we don't ignore failures
+                            // and print error message to stderr
+                            eprintln!("Command failed with {status}");
+                            std::process::exit(1);
+                        }
+                        if status.success() || !args.only_count_successes {
+                            i += 1;
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("Error running command: {err}");
+                    }
+                }
             }
-            if !r.status.success() && !args.ignore_failures {
-                // exit with error if we don't ignore failures
-                // and print error message to stderr
-                eprintln!("Command failed with {}", r.status);
-                std::process::exit(1);
+            Err(err) => {
+                eprintln!("Error running command: {err}");
             }
         }
     }
